@@ -17,7 +17,7 @@
 
 
 Adafruit_NeoPixel ring(PIXEL_COUNT, PIXEL_PIN, PIXEL_TYPE);
-Encoder volumeKnob(D3, D4);
+Encoder volumeKnob(D4, D3);
 static volatile uint8_t volumePercentage = 0;
 static volatile bool recentlyPressed = false;
 
@@ -26,6 +26,8 @@ void setup() {
     // This thing is bright.  255 = max, 0 = off
     ring.setBrightness(16);
     ring.show();
+
+    volumeKnob.write(0);
 
     pinMode(BUTTON_PIN, INPUT_PULLUP);
     attachInterrupt(BUTTON_PIN, press, FALLING);
