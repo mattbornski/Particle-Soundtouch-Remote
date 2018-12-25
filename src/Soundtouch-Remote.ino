@@ -1,102 +1,111 @@
-/*
- * Project Soundtouch-Remote
- * Description:
- * Author:
- * Date:
- */
-
 #include "Particle.h"
-#include "neopixel.h"
-#include <Encoder.h>
+#include "Adafruit_GFX.h"
+#include "Adafruit_ILI9341.h"
+#include "Adafruit_STMPE610.h"
+#include "soundtouch.h"
 
-#define PIXEL_PIN A5
-#define PIXEL_COUNT 24
-#define PIXEL_TYPE WS2812B
+#define STMPE_CS D3
+#define TFT_CS   D4
+#define TFT_DC   D5
+#define SD_CS    D2
 
-#define BUTTON_PIN A4
+Adafruit_ILI9341 display = Adafruit_ILI9341(TFT_CS, TFT_DC);
+Adafruit_STMPE610 touchscreen = Adafruit_STMPE610(STMPE_CS);
+SoundtouchClient soundtouch;
 
 
-Adafruit_NeoPixel ring(PIXEL_COUNT, PIXEL_PIN, PIXEL_TYPE);
-Encoder volumeKnob(D4, D3);
-static volatile uint8_t volumePercentage = 0;
-static volatile bool recentlyPressed = false;
+
+// This is calibration data for the raw touch data to the screen coordinates
+#define TS_MINX 3800
+#define TS_MAXX 100
+#define TS_MINY 100
+#define TS_MAXY 3750
+
+// Size of the color selection boxes and the paintbrush size
+#define BOXSIZE 40
+#define PENRADIUS 3
+int oldcolor, currentcolor;
 
 void setup() {
-    ring.begin();
-    // This thing is bright.  255 = max, 0 = off
-    ring.setBrightness(16);
-    ring.show();
+  Serial.begin(115200);
 
-    volumeKnob.write(0);
-
-    pinMode(BUTTON_PIN, INPUT_PULLUP);
-    attachInterrupt(BUTTON_PIN, press, FALLING);
+  delay(10);
+  Serial.println("FeatherWing TFT");
+  if (!touchscreen.begin()) {
+    Serial.println("Couldn't start touchscreen controller");
+    while (1);
+  }
+  Serial.println("Touchscreen started");
+  
+  display.begin();
+  display.fillScreen(ILI9341_BLACK);
+  
+  // make the color selection boxes
+  display.fillRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_RED);
+  display.fillRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9341_YELLOW);
+  display.fillRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, ILI9341_GREEN);
+  display.fillRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, ILI9341_CYAN);
+  display.fillRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, ILI9341_BLUE);
+  display.fillRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, ILI9341_MAGENTA);
+ 
+  // select the current color 'red'
+  display.drawRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+  currentcolor = ILI9341_RED;
 }
 
 void loop() {
-    if (recentlyPressed) {
-        Serial.println("Button recently pressed");
-        recentlyPressed = false;
-    }
+  // Retrieve a point
+  TS_Point p = touchscreen.getPoint();
+  
+  Serial.print("X = "); Serial.print(p.x);
+  Serial.print("\tY = "); Serial.print(p.y);
+  Serial.print("\tPressure = "); Serial.println(p.z);  
+ 
+ 
+  // Scale from ~0->4000 to display.width using the calibration #'s
+  p.x = map(p.x, TS_MINX, TS_MAXX, 0, display.width());
+  p.y = map(p.y, TS_MINY, TS_MAXY, 0, display.height());
 
-    setArc(volumePercentage, 0xFFFFFFFF);
+  if (p.y < BOXSIZE) {
+     oldcolor = currentcolor;
 
-    static volatile long oldPosition = -999;
-    long newPosition = volumeKnob.read();
-    if (newPosition != oldPosition) {
-        oldPosition = newPosition;
-        Serial.println(newPosition);
-        volumePercentage = newPosition;
-    }
-}
+     if (p.x < BOXSIZE) { 
+       currentcolor = ILI9341_RED; 
+       display.drawRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+     } else if (p.x < BOXSIZE*2) {
+       currentcolor = ILI9341_YELLOW;
+       display.drawRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+     } else if (p.x < BOXSIZE*3) {
+       currentcolor = ILI9341_GREEN;
+       display.drawRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+     } else if (p.x < BOXSIZE*4) {
+       currentcolor = ILI9341_CYAN;
+       display.drawRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+     } else if (p.x < BOXSIZE*5) {
+       currentcolor = ILI9341_BLUE;
+       display.drawRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+     } else if (p.x < BOXSIZE*6) {
+       currentcolor = ILI9341_MAGENTA;
+       display.drawRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+     }
 
-void setArc(uint8_t percentage, uint32_t color) {
-    uint8_t illuminatedPixels = (uint8_t) (ring.numPixels() * ((float)percentage / 100.0f));
-    Serial.print("illuminate ");
-    Serial.print(illuminatedPixels);
-    Serial.println(" / 24 pixels");
-    for (uint8_t i = 0; i < ring.numPixels(); i++) {
-        if (i < illuminatedPixels) {
-            ring.setPixelColor(i, color);
-        } else {
-            ring.setPixelColor(i, (uint32_t)0);
-        }
-    }
-    ring.show();
-}
-
-void rainbow(uint8_t wait) {
-  uint16_t i, j;
-
-  for(j=0; j<256; j++) {
-    for(i=0; i<ring.numPixels(); i++) {
-      ring.setPixelColor(i, Wheel((i+j) & 255));
-    }
-    ring.show();
-    delay(wait);
+     if (oldcolor != currentcolor) {
+        if (oldcolor == ILI9341_RED) 
+          display.fillRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_RED);
+        if (oldcolor == ILI9341_YELLOW) 
+          display.fillRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9341_YELLOW);
+        if (oldcolor == ILI9341_GREEN) 
+          display.fillRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, ILI9341_GREEN);
+        if (oldcolor == ILI9341_CYAN) 
+          display.fillRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, ILI9341_CYAN);
+        if (oldcolor == ILI9341_BLUE) 
+          display.fillRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, ILI9341_BLUE);
+        if (oldcolor == ILI9341_MAGENTA) 
+          display.fillRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, ILI9341_MAGENTA);
+     }
   }
-}
 
-// Input a value 0 to 255 to get a color value.
-// The colours are a transition r - g - b - back to r.
-uint32_t Wheel(byte WheelPos) {
-  if(WheelPos < 85) {
-   return ring.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
-  } else if(WheelPos < 170) {
-   WheelPos -= 85;
-   return ring.Color(255 - WheelPos * 3, 0, WheelPos * 3);
-  } else {
-   WheelPos -= 170;
-   return ring.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+  if (((p.y-PENRADIUS) > 0) && ((p.y+PENRADIUS) < display.height())) {
+    display.fillCircle(p.x, p.y, PENRADIUS, currentcolor);
   }
-}
-
-void press() {
-    static volatile unsigned long lastInterruptTime = 0;
-    unsigned long interrupt_time = millis();
-    // debounce time = 50milliseconds
-    if (interrupt_time - lastInterruptTime > 50) {
-        recentlyPressed = true;
-    }
-    lastInterruptTime = interrupt_time;
 }
