@@ -3,6 +3,7 @@
 #include "Adafruit_ILI9341.h"
 #include "Adafruit_STMPE610.h"
 #include "soundtouch.h"
+#include "imagebutton.h"
 
 #define MAX_TRACKING 256
 
@@ -23,6 +24,7 @@ Adafruit_ILI9341 display = Adafruit_ILI9341(TFT_CS, TFT_DC);
 Adafruit_STMPE610 touchscreen = Adafruit_STMPE610(STMPE_CS);
 SoundtouchClient soundtouchClient;
 Speaker *office;
+ImageButton *action;
 
 
 
@@ -88,6 +90,18 @@ void soundtouchLoop() {
       display.setCursor(10, 10);
       display.println("Office OK");
     }
+  }
+
+  if (office != NULL) {
+    if (action != NULL) {
+      delete action;
+    }
+    if (office->playing) {
+      action = new PauseButton();
+    } else {
+      action = new PlayButton();
+    }
+    action->draw(display, 50, 50);
   }
 }
 
