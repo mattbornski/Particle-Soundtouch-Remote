@@ -51,6 +51,8 @@ TouchTracking scale(TouchTracking t) {
 void setup() {
   Serial.begin(115200);
 
+  SoundtouchClient::setDebug(3);
+
   delay(10);
   if (!touchscreen.begin()) {
     Serial.println("Couldn't start touchscreen controller");
@@ -80,15 +82,21 @@ void displayReset() {
 
 void soundtouchLoop() {
   if (office == NULL) {
-    office = soundtouchClient.discoverWithCache("Office");
+    office = soundtouchClient.discoverSpeakerWithCache("Office");
+    
     if (office != NULL) {
       displayReset();
       touchscreen.writeRegister8(STMPE_INT_STA, 0xFF);
 
       display.setTextSize(3);
       display.setTextColor(ILI9341_RED);
-      display.setCursor(10, 10);
+      display.setCursor(20, 10);
       display.println("Office OK");
+    } else {
+      display.setTextSize(3);
+      display.setTextColor(ILI9341_RED);
+      display.setCursor(20, 10);
+      display.println("No Office");
     }
   }
 
@@ -97,9 +105,9 @@ void soundtouchLoop() {
       delete action;
     }
     if (office->playing) {
-      action = new PauseButton();
+      action = new PauseButton(office);
     } else {
-      action = new PlayButton();
+      action = new PlayButton(office);
     }
     action->draw(display, 50, 50);
   }
@@ -184,7 +192,9 @@ void uiLoop() {
       t.timestamp = now;
       t = scale(t);
 
-      if (draw(t)) {
+      if (action != NULL && action->contains(t.x, t.y)) {
+        action->perform();
+      } else if (draw(t)) {
         tracking[++trackingMru % MAX_TRACKING] = t;
       }
     }
