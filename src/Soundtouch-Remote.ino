@@ -5,15 +5,6 @@
 #include "soundtouch.h"
 #include "imagebutton.h"
 
-#define MAX_TRACKING 256
-
-struct TouchTracking {
-  uint16_t x;
-  uint16_t y;
-  uint8_t z;
-  uint32_t timestamp;
-};
-
 
 #define STMPE_CS D3
 #define TFT_CS   D4
@@ -22,9 +13,9 @@ struct TouchTracking {
 
 Adafruit_ILI9341 display = Adafruit_ILI9341(TFT_CS, TFT_DC);
 Adafruit_STMPE610 touchscreen = Adafruit_STMPE610(STMPE_CS);
+Debouncer debouncer;
 SoundtouchClient soundtouchClient;
 Speaker *office;
-ImageButton *action;
 
 
 
@@ -34,11 +25,6 @@ ImageButton *action;
 #define TS_MINY 100
 #define TS_MAXY 3750
 
-// Size of the color selection boxes and the paintbrush size
-#define BOXSIZE 40
-#define PENRADIUS 3
-int oldcolor, currentcolor;
-
 TouchTracking scale(TouchTracking t) {
   // Scale from ~0->4000 to display.width using the calibration #'s
   t.x = map(t.x, TS_MINX, TS_MAXX, 0, display.width());
@@ -46,6 +32,7 @@ TouchTracking scale(TouchTracking t) {
 
   return t;
 }
+
 
 
 void setup() {
@@ -62,22 +49,50 @@ void setup() {
   
   display.begin();
   Serial.println("Display driver started");
+
+  displayReset();
 }
 
 void displayReset() {
   display.fillScreen(ILI9341_BLACK);
-  
-  // make the color selection boxes
-  display.fillRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_RED);
-  display.fillRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9341_YELLOW);
-  display.fillRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, ILI9341_GREEN);
-  display.fillRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, ILI9341_CYAN);
-  display.fillRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, ILI9341_BLUE);
-  display.fillRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, ILI9341_MAGENTA);
- 
-  // select the current color 'red'
-  display.drawRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
-  currentcolor = ILI9341_RED;
+}
+
+ImageButton *availableActions[] = { NULL, NULL, NULL, NULL, NULL };
+void displaySpeaker(Speaker *speaker) {
+  display.setTextSize(2);
+  display.setTextColor(ILI9341_RED);
+  display.setCursor(20, 10);
+  if (office != NULL) {
+    if (office->online) {
+      display.println("Office Ready");
+    } else {
+      display.println("Office Offline");
+    }
+  } else {
+    display.println("Office not found");
+  }
+
+  for (ImageButton *action : availableActions) {
+    if (action != NULL) {
+      delete action;
+    }
+  }
+
+  if (office != NULL) {
+    if (office->playing) {
+      availableActions[0] = new PauseButton(office);
+    } else {
+      availableActions[0] = new PlayButton(office);
+    }
+  }
+
+  int i = 0;
+  for (ImageButton *action : availableActions) {
+    i++;
+    if (action != NULL) {
+      action->draw(display, i * 50, 50);
+    }
+  }
 }
 
 void soundtouchLoop() {
@@ -85,122 +100,58 @@ void soundtouchLoop() {
     office = soundtouchClient.discoverSpeakerWithCache("Office");
     
     if (office != NULL) {
-      displayReset();
+      displaySpeaker(office);
       touchscreen.writeRegister8(STMPE_INT_STA, 0xFF);
-
-      display.setTextSize(3);
-      display.setTextColor(ILI9341_RED);
-      display.setCursor(20, 10);
-      display.println("Office OK");
-    } else {
-      display.setTextSize(3);
-      display.setTextColor(ILI9341_RED);
-      display.setCursor(20, 10);
-      display.println("No Office");
     }
-  }
-
-  if (office != NULL) {
-    if (action != NULL) {
-      delete action;
-    }
-    if (office->playing) {
-      action = new PauseButton(office);
-    } else {
-      action = new PlayButton(office);
-    }
-    action->draw(display, 50, 50);
   }
 }
 
-bool draw(TouchTracking t) {
-  Serial.print("X = ");
-  Serial.print(t.x);
-  Serial.print("\tY = ");
-  Serial.print(t.y);
-  Serial.print("\tPressure = ");
-  Serial.println(t.z);
-
-  if (t.y < BOXSIZE) {
-     oldcolor = currentcolor;
-
-     if (t.x < BOXSIZE) { 
-       currentcolor = ILI9341_RED; 
-       display.drawRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
-     } else if (t.x < BOXSIZE*2) {
-       currentcolor = ILI9341_YELLOW;
-       display.drawRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
-     } else if (t.x < BOXSIZE*3) {
-       currentcolor = ILI9341_GREEN;
-       display.drawRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
-     } else if (t.x < BOXSIZE*4) {
-       currentcolor = ILI9341_CYAN;
-       display.drawRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
-     } else if (t.x < BOXSIZE*5) {
-       currentcolor = ILI9341_BLUE;
-       display.drawRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
-     } else if (t.x < BOXSIZE*6) {
-       currentcolor = ILI9341_MAGENTA;
-       display.drawRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
-     }
-
-     if (oldcolor != currentcolor) {
-        if (oldcolor == ILI9341_RED) 
-          display.fillRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_RED);
-        if (oldcolor == ILI9341_YELLOW) 
-          display.fillRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9341_YELLOW);
-        if (oldcolor == ILI9341_GREEN) 
-          display.fillRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, ILI9341_GREEN);
-        if (oldcolor == ILI9341_CYAN) 
-          display.fillRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, ILI9341_CYAN);
-        if (oldcolor == ILI9341_BLUE) 
-          display.fillRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, ILI9341_BLUE);
-        if (oldcolor == ILI9341_MAGENTA) 
-          display.fillRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, ILI9341_MAGENTA);
-     }
-
-     return false;
+bool handleAction(TouchTracking t) {
+  if (!t.valid) {
+    return false;
   }
 
-  if (((t.y-PENRADIUS) > 0) && ((t.y+PENRADIUS) < display.height())) {
-    display.fillCircle(t.x, t.y, PENRADIUS, currentcolor);
-    return true;
+  for (ImageButton *action : availableActions) {
+    if (action != NULL && action->contains(t.x, t.y)) {
+      action->perform(t);
+      return true;
+    }
   }
 
   return false;
 }
 
-TouchTracking tracking[MAX_TRACKING];
-uint8_t trackingLru = 1;
-uint8_t trackingMru = 0;
-uint32_t trackingTtl = 3500;
-void uiLoop() {
-  uint32_t now = millis();
-
-  for (int i = trackingLru; i <= trackingMru; i++) {
-    TouchTracking t = tracking[i % MAX_TRACKING];
-    if (t.timestamp + trackingTtl < now) {
-      display.fillCircle(t.x, t.y, PENRADIUS, ILI9341_BLACK);
-      trackingLru++;
-    }
-  }
-
+bool debouncerLoop(Debouncer debouncer, Adafruit_STMPE610 touchscreen) {
   if (touchscreen.touched()) {
     while (!touchscreen.bufferEmpty()) {
+      uint32_t now = millis();
       TouchTracking t;
       touchscreen.readData(&t.x, &t.y, &t.z);
       t.timestamp = now;
+      t.valid = true;
       t = scale(t);
+      Serial.print("Touch at ");
+      Serial.print(t.x);
+      Serial.print(", ");
+      Serial.println(t.y);
 
-      if (action != NULL && action->contains(t.x, t.y)) {
-        action->perform();
-      } else if (draw(t)) {
-        tracking[++trackingMru % MAX_TRACKING] = t;
-      }
+      debouncer.input(t);
+
+      return true;
     }
-    // reset touch registers
-    touchscreen.writeRegister8(STMPE_INT_STA, 0xFF);
   }
+
+  // reset touch registers
+  touchscreen.writeRegister8(STMPE_INT_STA, 0xFF);
+  return false;
+}
+
+void uiLoop() {
+  while (debouncerLoop(debouncer, touchscreen)) {
+    handleAction(debouncer.output());
+  }
+
+  handleAction(debouncer.output());
 }
 
 /*static bool inSpinner = false;
@@ -213,7 +164,18 @@ void spinnerLoop() {
   }
 }*/
 
+uint32_t lastDebug = 0;
+void debugLoop() {
+  uint32_t now = millis();
+  if (now - lastDebug > 30000) {
+    Serial.print("Heap free memory high water mark: ");
+    Serial.println(System.freeMemory());
+    lastDebug = now;
+  }
+}
+
 void loop() {
+  debugLoop();
   soundtouchLoop();
   uiLoop();
 }

@@ -2,6 +2,35 @@
 #include "Adafruit_SPITFT.h"
 #include "speaker.h"
 
+struct TouchTracking {
+  bool valid;
+  uint16_t x;
+  uint16_t y;
+  uint8_t z;
+  uint32_t timestamp;
+};
+
+
+
+class Debouncer {
+protected:
+  bool returnedLastPeak;
+  TouchTracking lastPeak;
+  TouchTracking lastValley;
+
+  void setPeak(TouchTracking t);
+  void setValley(TouchTracking t);
+
+public:
+  Debouncer();
+
+  void input(TouchTracking t);
+  TouchTracking output();
+  bool loop();
+};
+
+
+
 class ImageButton {
 protected:
   GFXcanvas16 *canvas;
@@ -22,7 +51,7 @@ public:
   void draw(Adafruit_SPITFT &display, int16_t x, int16_t y);
 
   bool contains(int16_t x, int16_t y);
-  virtual void perform() = 0;
+  virtual void perform(TouchTracking t) = 0;
 };
 
 class PauseButton : public ImageButton {
@@ -33,7 +62,7 @@ public:
     PauseButton(Speaker *speaker);
     ~PauseButton();
 
-    void perform();
+    void perform(TouchTracking t);
 };
 
 class PlayButton : public ImageButton {
@@ -44,5 +73,5 @@ public:
     PlayButton(Speaker *speaker);
     ~PlayButton();
 
-    void perform();
+    void perform(TouchTracking t);
 };

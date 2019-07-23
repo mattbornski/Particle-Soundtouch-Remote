@@ -1,6 +1,97 @@
 #include "imagebutton.h"
 #include "Adafruit_ILI9341.h"
 
+Debouncer::Debouncer() {
+  this->lastPeak.valid = false;
+  this->lastValley.valid = false;
+  this->returnedLastPeak = true;
+}
+
+void Debouncer::setPeak(TouchTracking t) {
+  this->lastPeak.x = t.x;
+  this->lastPeak.y = t.y;
+  this->lastPeak.z = t.z;
+  this->lastPeak.timestamp = t.timestamp;
+  this->lastPeak.valid = t.valid;
+  this->returnedLastPeak = false;
+
+  this->lastValley.valid = false;
+
+  Serial.print("Peak at ");
+  Serial.print(this->lastPeak.x);
+  Serial.print(", ");
+  Serial.println(this->lastPeak.y);
+  Serial.print("Debouncer this = ");
+  Serial.println((void *)this);
+  Serial.print("Debouncer this->returnedLastPeak = ");
+  Serial.println(this->returnedLastPeak);
+}
+
+void Debouncer::setValley(TouchTracking t) {
+  Serial.print("Valley at ");
+  Serial.print(t.x);
+  Serial.print(", ");
+  Serial.println(t.y);
+  this->lastValley.x = t.x;
+  this->lastValley.y = t.y;
+  this->lastValley.z = t.z;
+  this->lastValley.timestamp = t.timestamp;
+  this->lastValley.valid = t.valid;
+}
+
+void Debouncer::input(TouchTracking t) {
+  if (!t.valid) {
+    return;
+  }
+
+  if (!this->lastPeak.valid) {
+    this->setPeak(t);
+    return;
+  }
+
+  if (t.z <= this->lastPeak.z) {
+    this->setPeak(t);
+    return;
+  }
+
+  if (this->returnedLastPeak && (abs(t.x - this->lastPeak.x) > 5) && (abs(t.y - this->lastPeak.y) > 5)) {
+    this->setPeak(t);
+    return;
+  }
+
+  if (!this->lastValley.valid) {
+    this->setValley(t);
+    return;
+  }
+
+  if (t.z >= this->lastValley.z) {
+    this->setValley(t);
+    return;
+  }
+}
+
+TouchTracking Debouncer::output() {
+  Serial.println("gathering output point");
+  Serial.print("Debouncer this = ");
+  Serial.println((void *)this);
+  Serial.print("Debouncer this->returnedLastPeak = ");
+  Serial.println(this->returnedLastPeak);
+  if (!(this->returnedLastPeak)) {
+    Serial.print("Returning point at ");
+    Serial.print(this->lastPeak.x);
+    Serial.print(", ");
+    Serial.println(this->lastPeak.y);
+    this->returnedLastPeak = true;
+    return this->lastPeak;
+  } else {
+    TouchTracking t;
+    t.valid = false;
+    return t;
+  }
+}
+
+
+
 ImageButton::ImageButton(uint16_t width, uint16_t height) {
     this->alloc(width, height);
 }
@@ -55,7 +146,7 @@ PlayButton::~PlayButton() {
   this->dealloc();
 }
 
-void PlayButton::perform() {
+void PlayButton::perform(TouchTracking t) {
     Serial.println("play!");
     if (this->speaker != NULL) {
       this->speaker->play();
@@ -74,7 +165,7 @@ PauseButton::~PauseButton() {
   this->dealloc();
 }
 
-void PauseButton::perform() {
+void PauseButton::perform(TouchTracking t) {
     Serial.println("pause!");
     if (this->speaker != NULL) {
       this->speaker->pause();
